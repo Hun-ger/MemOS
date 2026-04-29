@@ -148,6 +148,10 @@ Add the plugin config to `~/.openclaw/openclaw.json`:
     "entries": {
       "memos-local-openclaw-plugin": {
         "enabled": true,
+        "hooks": {
+          // Required on OpenClaw 2026.4.24+ for automatic memory_add via agent_end
+          "allowConversationAccess": true
+        },
         "config": {
           "embedding": {
             "provider": "openai_compatible",

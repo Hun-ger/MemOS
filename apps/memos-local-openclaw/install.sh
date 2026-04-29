@@ -172,6 +172,7 @@ PLUGIN_PACKAGE="@memtensor/memos-local-openclaw-plugin"
 PLUGIN_VERSION="latest"
 PORT="18789"
 OPENCLAW_HOME="${HOME}/.openclaw"
+MIN_CONVERSATION_ACCESS_VERSION="2026.4.24"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -226,10 +227,60 @@ PACKAGE_SPEC="${PLUGIN_PACKAGE}@${PLUGIN_VERSION}"
 EXTENSION_DIR="${OPENCLAW_HOME}/extensions/${PLUGIN_ID}"
 OPENCLAW_CONFIG_PATH="${OPENCLAW_HOME}/openclaw.json"
 
+openclaw_version() {
+  local version_output
+  version_output="$("${OPENCLAW_BIN}" --version 2>/dev/null || true)"
+  printf '%s\n' "$version_output" | sed -nE 's/.*(^|[^0-9])([0-9]{4}\.[0-9]+(\.[0-9]+)?).*/\2/p' | sed -n '1p'
+}
+
+version_gte() {
+  node - "$1" "$2" <<'NODE'
+const current = process.argv[2];
+const minimum = process.argv[3];
+
+function parseVersion(value) {
+  const parts = String(value).split('.').map((part) => Number.parseInt(part, 10));
+  if (parts.length < 2 || parts.some((part) => !Number.isFinite(part))) {
+    return null;
+  }
+  while (parts.length < 3) {
+    parts.push(0);
+  }
+  return parts;
+}
+
+const currentParts = parseVersion(current);
+const minimumParts = parseVersion(minimum);
+if (!currentParts || !minimumParts) {
+  process.exit(1);
+}
+
+for (let i = 0; i < 3; i += 1) {
+  if (currentParts[i] > minimumParts[i]) {
+    process.exit(0);
+  }
+  if (currentParts[i] < minimumParts[i]) {
+    process.exit(1);
+  }
+}
+process.exit(0);
+NODE
+}
+
+OPENCLAW_VERSION="$(openclaw_version)"
+ALLOW_CONVERSATION_ACCESS_HOOK="0"
+if [[ -n "${OPENCLAW_VERSION}" ]] && version_gte "${OPENCLAW_VERSION}" "${MIN_CONVERSATION_ACCESS_VERSION}"; then
+  ALLOW_CONVERSATION_ACCESS_HOOK="1"
+  success "Conversation access hook supported by OpenClaw ${OPENCLAW_VERSION}, 当前 OpenClaw 支持会话访问 hook"
+else
+  warn "Skip conversation access hook for OpenClaw ${OPENCLAW_VERSION:-unknown}; requires >= ${MIN_CONVERSATION_ACCESS_VERSION}"
+  warn "当前 OpenClaw 版本不写入 allowConversationAccess；该参数需要 >= ${MIN_CONVERSATION_ACCESS_VERSION}"
+fi
+
 update_openclaw_config() {
   info "Update OpenClaw config, 更新 OpenClaw 配置..."
   mkdir -p "${OPENCLAW_HOME}"
-  node - "${OPENCLAW_CONFIG_PATH}" "${PLUGIN_ID}" "${EXTENSION_DIR}" "${PACKAGE_SPEC}" <<'NODE'
+  node - "${OPENCLAW_CONFIG_PATH}" "${PLUGIN_ID}" "${EXTENSION_DIR}" "${PACKAGE_SPEC}" "${ALLOW_CONVERSATION_ACCESS_HOOK}" <<'NODE'
 const fs = require('fs');
 const path = require('path');
 
@@ -237,6 +288,7 @@ const configPath = process.argv[2];
 const pluginId = process.argv[3];
 const installPath = process.argv[4];
 const spec = process.argv[5];
+const allowConversationAccessHook = process.argv[6] === '1';
 
 let config = {};
 if (fs.existsSync(configPath)) {
@@ -285,6 +337,25 @@ if (!config.plugins.entries[pluginId] || typeof config.plugins.entries[pluginId]
   config.plugins.entries[pluginId] = {};
 }
 config.plugins.entries[pluginId].enabled = true;
+if (allowConversationAccessHook) {
+  if (
+    !config.plugins.entries[pluginId].hooks ||
+    typeof config.plugins.entries[pluginId].hooks !== 'object' ||
+    Array.isArray(config.plugins.entries[pluginId].hooks)
+  ) {
+    config.plugins.entries[pluginId].hooks = {};
+  }
+  config.plugins.entries[pluginId].hooks.allowConversationAccess = true;
+} else if (
+  config.plugins.entries[pluginId].hooks &&
+  typeof config.plugins.entries[pluginId].hooks === 'object' &&
+  !Array.isArray(config.plugins.entries[pluginId].hooks)
+) {
+  delete config.plugins.entries[pluginId].hooks.allowConversationAccess;
+  if (Object.keys(config.plugins.entries[pluginId].hooks).length === 0) {
+    delete config.plugins.entries[pluginId].hooks;
+  }
+}
 
 // Register plugin in installs so gateway auto-loads it on restart (pinned spec when package.json exists)
 if (!config.plugins.installs || typeof config.plugins.installs !== 'object') {
