@@ -28,7 +28,7 @@ llm:
 
 algorithm:
   lightweightMemory:
-    enabled: true          # true = low-cost summaries only; false = memory self-evolution with tasks/experiences/world models/skills
+    enabled: false         # false = memory self-evolution (reflect/reward/L2); true = low-cost summaries only
   capture:
     # reflection/alpha now runs in windowed batch mode only.
     # fixed strategy: primary window 20 (overlap 3), degrade to 9 (overlap 3),
