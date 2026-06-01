@@ -191,6 +191,11 @@ export const DEFAULT_CONFIG: ResolvedConfig = {
       // genuinely (full-)pass its trial(s) — a single fail (η→0.05) archives
       // it rather than letting a weak signal promote it.
       repairCandidateMinEta: 0.5,
+      outputLanguageMode: "follow_policy",
+      outcomeRTaskSuccessThreshold: 0.5,
+      outcomeRTaskFailureThreshold: -0.5,
+      failureEpisodeScorePenalty: 0,
+      failureEpisodeMaxRatio: 0.4,
     },
     feedback: {
       failureThreshold: 3,
