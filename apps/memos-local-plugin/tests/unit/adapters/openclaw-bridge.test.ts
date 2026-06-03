@@ -32,6 +32,11 @@ import {
   renderContextBlock,
 } from "../../../adapters/openclaw/bridge.js";
 import { resolveOpenClawPluginConfig } from "../../../adapters/openclaw/plugin-config.js";
+import {
+  isStandaloneMathFinalAnswerTask,
+  mergeMathFinalAnswerProtocol,
+  renderMathFinalAnswerProtocol,
+} from "../../../core/retrieval/math-task.js";
 import { registerOpenClawTools } from "../../../adapters/openclaw/tools.js";
 import type {
   AgentToolDescriptor,
@@ -777,7 +782,31 @@ describe("renderContextBlock", () => {
     });
     expect(block).toContain("<memos_context>");
     expect(block).toContain("memos_search");
+    expect(block).toContain("only if you have a specific reason");
     expect(block).toContain("</memos_context>");
+  });
+
+  it("uses the shared core math final-answer protocol", () => {
+    expect(
+      isStandaloneMathFinalAnswerTask(
+        "Please solve this olympiad-style combinatorics problem and give the final answer in \\boxed{...} format.",
+      ),
+    ).toBe(true);
+    const protocol = renderMathFinalAnswerProtocol();
+    expect(protocol).toContain("Standalone math task guardrails");
+    expect(protocol).toContain("counting/probability");
+    expect(protocol).toContain("standalone math task");
+    expect(protocol).toContain("Do not output a literal placeholder");
+    expect(protocol).toContain("do not call `memos_search`");
+    expect(protocol).toContain("Do not emit `<think>` tags");
+    expect(protocol).toContain("Do not stop after a progress summary");
+  });
+
+  it("merges math task guardrails through the shared core renderer", () => {
+    const merged = mergeMathFinalAnswerProtocol("remembered skill");
+    expect(merged).toContain("remembered skill");
+    expect(merged).toContain("Standalone math task guardrails");
+    expect(mergeMathFinalAnswerProtocol(merged)).toBe(merged);
   });
 });
 
@@ -1224,9 +1253,11 @@ describe("createOpenClawBridge", () => {
     await (pipeline as PipelineHandle).flush();
 
     const traces = await mc.listTraces({ groupByTurn: true });
-    expect(traces).toHaveLength(1);
-    expect(traces[0]?.toolCalls?.[0]?.name).toBe("sh");
-    expect(traces[0]?.agentText).toBe("done");
+    // V7 §0.1 stores tool-hook observations as dedicated tool turns, so
+    // lite capture may emit separate trace rows for the tool step and the
+    // assistant reply within the same user turn.
+    expect(traces.some((t) => t.toolCalls?.some((tc) => tc.name === "sh"))).toBe(true);
+    expect(traces.some((t) => t.agentText === "done")).toBe(true);
   });
 
   it("handleAgentEnd works even when before_prompt_build was never called (lazy episode open)", async () => {
