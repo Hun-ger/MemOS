@@ -29,6 +29,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createOpenClawBridge, type BridgeHandle } from "./bridge.js";
+import { resolveOpenClawPluginConfig } from "./plugin-config.js";
 import {
   acquireOpenClawRuntimeLock,
   DuplicateOpenClawRuntimeError,
@@ -205,10 +206,15 @@ async function createRuntime(
     ).bindTelemetry?.(telemetry);
     telemetry.trackPluginStarted("openclaw");
 
+    const featureConfig = resolveOpenClawPluginConfig(api.pluginConfig);
+    api.logger.info("memos-local: runtime switches", featureConfig);
+
     const bridge = createOpenClawBridge({
       agent: "openclaw",
       core,
       log: api.logger,
+      memorySearchEnabled: featureConfig.memorySearchEnabled,
+      memoryAddEnabled: featureConfig.memoryAddEnabled,
     });
 
     // OpenClaw's viewer port is fixed at :18799 (hermes uses :18800).
@@ -341,6 +347,8 @@ function createSharedRuntimeState(api: OpenClawPluginApi): SharedRuntimeState {
 // ─── Registration ──────────────────────────────────────────────────────────
 
 function register(api: OpenClawPluginApi): void {
+  const featureConfig = resolveOpenClawPluginConfig(api.pluginConfig);
+
   let state = readSharedRuntimeState();
   if (!state) {
     state = createSharedRuntimeState(api);
@@ -415,6 +423,7 @@ function register(api: OpenClawPluginApi): void {
     agent: "openclaw",
     getCore: async () => (await ensureRuntime())?.core ?? null,
     log: api.logger,
+    memorySearchEnabled: featureConfig.memorySearchEnabled,
   });
 
   // 3. Hooks — every handler matches the upstream `PluginHookHandlerMap`
